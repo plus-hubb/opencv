@@ -8,7 +8,6 @@
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 
 <style>
-/* ===== Reset & Center Layout ===== */
 body {
     margin: 0;
     width: 100vw;
@@ -70,7 +69,7 @@ canvas {
 </style>
 
 <script>
-/* ===== Emoji Background Logic ===== */
+/* ===== Emoji Background ===== */
 const emojis = ["😀","😡","😱","😢","😐","😍","🤢","😮"];
 
 function createEmoji() {
@@ -85,7 +84,7 @@ function createEmoji() {
 }
 setInterval(createEmoji, 500);
 
-/* ===== Emotion Detection (ของเดิม ไม่เปลี่ยน) ===== */
+/* ===== Emotion Detection (เหมือนต้นฉบับ) ===== */
 let session;
 let faceCascade;
 const labels = ["Angry","Disgust","Fear","Happy","Sad","Surprise","Neutral"];
@@ -118,6 +117,8 @@ async function processVideo() {
     const canvas = document.getElementById("canvasOutput");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
+    if (video.paused || video.ended) return;
+
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     let src = cv.imread(canvas);
@@ -129,12 +130,46 @@ async function processVideo() {
 
     for (let i = 0; i < faces.size(); i++) {
         let f = faces.get(i);
+
+        /* วาดกรอบ */
         ctx.strokeStyle = "#00ff00";
         ctx.lineWidth = 2;
         ctx.strokeRect(f.x, f.y, f.width, f.height);
+
+        /* ==== ส่วนทำนายอารมณ์ (เหมือนต้นฉบับ) ==== */
+        const size = 64;
+        const faceCanvas = document.createElement("canvas");
+        faceCanvas.width = size;
+        faceCanvas.height = size;
+        const fCtx = faceCanvas.getContext("2d");
+
+        fCtx.drawImage(canvas, f.x, f.y, f.width, f.height, 0, 0, size, size);
+        const imgData = fCtx.getImageData(0, 0, size, size);
+
+        const input = new Float32Array(1 * 3 * size * size);
+        for (let c = 0; c < 3; c++) {
+            for (let p = 0; p < size * size; p++) {
+                input[c * size * size + p] =
+                    imgData.data[p * 4 + c] / 255.0;
+            }
+        }
+
+        const tensor = new ort.Tensor("float32", input, [1,3,size,size]);
+        const output = await session.run({ [session.inputNames[0]]: tensor });
+        const data = output[session.outputNames[0]].data;
+
+        const idx = data.indexOf(Math.max(...data));
+        const emotion = labels[idx] || "Unknown";
+
+        /* แสดงข้อความอารมณ์ */
+        ctx.fillStyle = "#00ff00";
+        ctx.font = "18px Arial";
+        ctx.fillText(emotion, f.x, f.y - 10);
     }
 
-    src.delete(); gray.delete(); faces.delete();
+    src.delete();
+    gray.delete();
+    faces.delete();
     requestAnimationFrame(processVideo);
 }
 </script>
