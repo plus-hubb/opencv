@@ -8,11 +8,19 @@
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 
 <style>
+/* ===== Reset & Center Layout ===== */
 body {
-    font-family: Arial, sans-serif;
     margin: 0;
-    padding: 20px;
+    width: 100vw;
+    height: 100vh;
     overflow: hidden;
+    font-family: Arial, sans-serif;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
     background: #f0f0f0;
 }
 
@@ -27,39 +35,36 @@ body {
 
 .emoji {
     position: absolute;
-    font-size: 32px;
+    font-size: 28px;
     opacity: 0.15;
-    animation: float 20s linear infinite;
+    animation: float 18s linear infinite;
 }
 
 @keyframes float {
-    from { transform: translateY(100vh) rotate(0deg); }
-    to   { transform: translateY(-120vh) rotate(360deg); }
+    from { transform: translateY(110vh) rotate(0deg); }
+    to   { transform: translateY(-130vh) rotate(360deg); }
 }
 
-/* ===== Main UI ===== */
+/* ===== UI ===== */
 #status {
-    margin-bottom: 15px;
-    padding: 10px;
+    margin-bottom: 12px;
+    padding: 10px 16px;
     background: #333;
     color: #fff;
-    border-radius: 4px;
-    display: inline-block;
-    position: relative;
+    border-radius: 6px;
     z-index: 2;
 }
 
 .container {
-    position: relative;
     z-index: 2;
-    display: inline-block;
     background: #fff;
     padding: 10px;
-    border-radius: 8px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    border-radius: 10px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
 }
 
 canvas {
+    display: block;
     border: 2px solid #333;
 }
 </style>
@@ -69,33 +74,29 @@ canvas {
 const emojis = ["😀","😡","😱","😢","😐","😍","🤢","😮"];
 
 function createEmoji() {
-    const emoji = document.createElement("div");
-    emoji.className = "emoji";
-    emoji.innerText = emojis[Math.floor(Math.random() * emojis.length)];
-
-    emoji.style.left = Math.random() * 100 + "vw";
-    emoji.style.fontSize = (24 + Math.random() * 32) + "px";
-    emoji.style.animationDuration = (15 + Math.random() * 20) + "s";
-
-    document.querySelector(".emoji-bg").appendChild(emoji);
-
-    setTimeout(() => emoji.remove(), 35000);
+    const e = document.createElement("div");
+    e.className = "emoji";
+    e.innerText = emojis[Math.floor(Math.random() * emojis.length)];
+    e.style.left = Math.random() * 100 + "vw";
+    e.style.fontSize = 24 + Math.random() * 24 + "px";
+    e.style.animationDuration = 12 + Math.random() * 18 + "s";
+    document.querySelector(".emoji-bg").appendChild(e);
+    setTimeout(() => e.remove(), 35000);
 }
+setInterval(createEmoji, 500);
 
-setInterval(createEmoji, 600);
-
-/* ===== Emotion Detection (เดิมของคุณ) ===== */
+/* ===== Emotion Detection (ของเดิม ไม่เปลี่ยน) ===== */
 let session;
 let faceCascade;
 const labels = ["Angry","Disgust","Fear","Happy","Sad","Surprise","Neutral"];
 
 async function onOpenCvReady() {
-    const status = document.getElementById('status');
+    const status = document.getElementById("status");
     status.innerText = "กำลังโหลดโมเดล...";
-    session = await ort.InferenceSession.create('./emotion_yolo11n_cls.onnx');
+    session = await ort.InferenceSession.create("./emotion_yolo11n_cls.onnx");
 
     faceCascade = new cv.CascadeClassifier();
-    const xml = 'haarcascade_frontalface_default.xml';
+    const xml = "haarcascade_frontalface_default.xml";
     const res = await fetch(xml);
     cv.FS_createDataFile("/", xml, new Uint8Array(await res.arrayBuffer()), true, false);
     faceCascade.load(xml);
@@ -105,7 +106,7 @@ async function onOpenCvReady() {
 }
 
 function startVideo() {
-    const video = document.getElementById('videoInput');
+    const video = document.getElementById("videoInput");
     navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
         video.srcObject = stream;
         video.onloadedmetadata = () => processVideo();
@@ -113,11 +114,12 @@ function startVideo() {
 }
 
 async function processVideo() {
-    const video = document.getElementById('videoInput');
-    const canvas = document.getElementById('canvasOutput');
-    const ctx = canvas.getContext('2d');
+    const video = document.getElementById("videoInput");
+    const canvas = document.getElementById("canvasOutput");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
     let src = cv.imread(canvas);
     let gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
@@ -128,6 +130,7 @@ async function processVideo() {
     for (let i = 0; i < faces.size(); i++) {
         let f = faces.get(i);
         ctx.strokeStyle = "#00ff00";
+        ctx.lineWidth = 2;
         ctx.strokeRect(f.x, f.y, f.width, f.height);
     }
 
@@ -140,6 +143,7 @@ async function processVideo() {
 </head>
 
 <body>
+
 <div class="emoji-bg"></div>
 
 <div id="status">กำลังเริ่มต้น...</div>
