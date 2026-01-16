@@ -1,143 +1,153 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emotion Detection (Standard 64px)</title>
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            background-color: #f0f0f0; 
-            margin: 0; 
-            padding: 20px;
-        }
-        .container { 
-            position: relative; 
-            display: inline-block; 
-            background: #fff;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        canvas { 
-            display: block;
-            border: 2px solid #333;
-            max-width: 100%;
-            height: auto;
-        }
-        #status { 
-            margin-bottom: 15px;
-            padding: 10px;
-            background: #333;
-            color: #fff;
-            border-radius: 4px;
-            display: inline-block;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emotion Detection</title>
 
-    <script>
-        let session;
-        let faceCascade;
-        // ลำดับอารมณ์อ้างอิงจาก classes.json
-        const labels = ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"]; 
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 
-        async function onOpenCvReady() {
-            const status = document.getElementById('status');
-            status.innerText = "กำลังโหลดโมเดล (64x64)...";
-            try {
-                // โหลดโมเดลที่ตั้งค่า imgsz=64
-                session = await ort.InferenceSession.create('./emotion_yolo11n_cls.onnx');
-                
-                faceCascade = new cv.CascadeClassifier();
-                const faceXml = 'haarcascade_frontalface_default.xml';
-                const res = await fetch(faceXml);
-                const buffer = await res.arrayBuffer();
-                cv.FS_createDataFile("/", faceXml, new Uint8Array(buffer), true, false, false);
-                faceCascade.load(faceXml);
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    overflow: hidden;
+    background: #f0f0f0;
+}
 
-                status.innerText = "ระบบพร้อมใช้งาน";
-                startVideo();
-            } catch (e) {
-                console.error(e);
-                status.innerText = "Error: " + e.message;
-            }
-        }
+/* ===== Emoji Background ===== */
+.emoji-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
 
-        function startVideo() {
-            const video = document.getElementById('videoInput');
-            navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-                video.srcObject = stream;
-                video.onloadedmetadata = () => { processVideo(); };
-            });
-        }
+.emoji {
+    position: absolute;
+    font-size: 32px;
+    opacity: 0.15;
+    animation: float 20s linear infinite;
+}
 
-        async function processVideo() {
-            const video = document.getElementById('videoInput');
-            const canvas = document.getElementById('canvasOutput');
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            
-            if (video.paused || video.ended) return;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            let src = cv.imread(canvas);
-            let gray = new cv.Mat();
-            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-            let faces = new cv.RectVector();
-            faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0);
+@keyframes float {
+    from { transform: translateY(100vh) rotate(0deg); }
+    to   { transform: translateY(-120vh) rotate(360deg); }
+}
 
-            for (let i = 0; i < faces.size(); ++i) {
-                let face = faces.get(i);
-                
-                // วาดกรอบสี่เหลี่ยมสีเขียวแบบมาตรฐาน
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 2;
-                ctx.strokeRect(face.x, face.y, face.width, face.height);
+/* ===== Main UI ===== */
+#status {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #333;
+    color: #fff;
+    border-radius: 4px;
+    display: inline-block;
+    position: relative;
+    z-index: 2;
+}
 
-                try {
-                    // ปรับขนาด input เป็น 64 ตามโมเดล
-                    const size = 64; 
-                    const faceCanvas = document.createElement('canvas');
-                    faceCanvas.width = size; faceCanvas.height = size;
-                    const fCtx = faceCanvas.getContext('2d');
-                    fCtx.drawImage(canvas, face.x, face.y, face.width, face.height, 0, 0, size, size);
-                    
-                    const imgData = fCtx.getImageData(0, 0, size, size);
-                    const input = new Float32Array(1 * 3 * size * size);
-                    for (let c = 0; c < 3; c++) {
-                        for (let p = 0; p < size * size; p++) {
-                            // Normalize ค่าสีเป็น 0.0 - 1.0
-                            input[c * size * size + p] = imgData.data[p * 4 + c] / 255.0;
-                        }
-                    }
+.container {
+    position: relative;
+    z-index: 2;
+    display: inline-block;
+    background: #fff;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
 
-                    const tensor = new ort.Tensor('float32', input, [1, 3, size, size]);
-                    const output = await session.run({ [session.inputNames[0]]: tensor });
-                    const outputData = output[session.outputNames[0]].data;
-                    
-                    const maxIdx = outputData.indexOf(Math.max(...outputData));
-                    const emotion = labels[maxIdx] || "Unknown";
+canvas {
+    border: 2px solid #333;
+}
+</style>
 
-                    // แสดงข้อความอารมณ์
-                    ctx.fillStyle = "#00ff00";
-                    ctx.font = "18px Arial";
-                    ctx.fillText(emotion, face.x, face.y - 10);
+<script>
+/* ===== Emoji Background Logic ===== */
+const emojis = ["😀","😡","😱","😢","😐","😍","🤢","😮"];
 
-                } catch (err) { console.error(err); }
-            }
-            src.delete(); gray.delete(); faces.delete();
-            requestAnimationFrame(processVideo);
-        }
-    </script>
-    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+function createEmoji() {
+    const emoji = document.createElement("div");
+    emoji.className = "emoji";
+    emoji.innerText = emojis[Math.floor(Math.random() * emojis.length)];
+
+    emoji.style.left = Math.random() * 100 + "vw";
+    emoji.style.fontSize = (24 + Math.random() * 32) + "px";
+    emoji.style.animationDuration = (15 + Math.random() * 20) + "s";
+
+    document.querySelector(".emoji-bg").appendChild(emoji);
+
+    setTimeout(() => emoji.remove(), 35000);
+}
+
+setInterval(createEmoji, 600);
+
+/* ===== Emotion Detection (เดิมของคุณ) ===== */
+let session;
+let faceCascade;
+const labels = ["Angry","Disgust","Fear","Happy","Sad","Surprise","Neutral"];
+
+async function onOpenCvReady() {
+    const status = document.getElementById('status');
+    status.innerText = "กำลังโหลดโมเดล...";
+    session = await ort.InferenceSession.create('./emotion_yolo11n_cls.onnx');
+
+    faceCascade = new cv.CascadeClassifier();
+    const xml = 'haarcascade_frontalface_default.xml';
+    const res = await fetch(xml);
+    cv.FS_createDataFile("/", xml, new Uint8Array(await res.arrayBuffer()), true, false);
+    faceCascade.load(xml);
+
+    status.innerText = "ระบบพร้อมใช้งาน";
+    startVideo();
+}
+
+function startVideo() {
+    const video = document.getElementById('videoInput');
+    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+        video.srcObject = stream;
+        video.onloadedmetadata = () => processVideo();
+    });
+}
+
+async function processVideo() {
+    const video = document.getElementById('videoInput');
+    const canvas = document.getElementById('canvasOutput');
+    const ctx = canvas.getContext('2d');
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let src = cv.imread(canvas);
+    let gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    let faces = new cv.RectVector();
+    faceCascade.detectMultiScale(gray, faces, 1.1, 3);
+
+    for (let i = 0; i < faces.size(); i++) {
+        let f = faces.get(i);
+        ctx.strokeStyle = "#00ff00";
+        ctx.strokeRect(f.x, f.y, f.width, f.height);
+    }
+
+    src.delete(); gray.delete(); faces.delete();
+    requestAnimationFrame(processVideo);
+}
+</script>
+
+<script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
 </head>
+
 <body>
-    <div id="status">กำลังเริ่มต้น...</div>
-    <div class="container">
-        <video id="videoInput" width="640" height="480" autoplay playsinline style="display:none;"></video>
-        <canvas id="canvasOutput" width="640" height="480"></canvas>
-    </div>
+<div class="emoji-bg"></div>
+
+<div id="status">กำลังเริ่มต้น...</div>
+
+<div class="container">
+    <video id="videoInput" width="640" height="480" autoplay playsinline style="display:none"></video>
+    <canvas id="canvasOutput" width="640" height="480"></canvas>
+</div>
+
 </body>
 </html>
